@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CYBER-X | Rotating Neon Downloader</title>
+    <style>
+        :root {
+            --neon-red: #ff0055;
+            --neon-glow: rgba(255, 0, 85, 0.4);
+            --bg-dark: #050508;
+            --card-bg: rgba(10, 10, 15, 0.75);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 20% 20%, rgba(255, 0, 85, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(255, 0, 85, 0.08) 0%, transparent 40%);
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .glow-wrap {
+            position: relative;
+            width: 100%;
+            max-width: 520px;
+            border-radius: 22px;
+            padding: 2px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(255, 0, 85, 0.2);
+        }
+
+        @keyframes rotateLight {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .glow-wrap::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: conic-gradient(
+                transparent,
+                transparent,
+                transparent,
+                var(--neon-red)
+            );
+            animation: rotateLight 4s linear infinite;
+        }
+
+        .container {
+            position: relative;
+            background: var(--card-bg);
+            padding: 35px;
+            border-radius: 20px;
+            backdrop-filter: blur(15px);
+            width: 100%;
+            text-align: center;
+            box-sizing: border-box;
+            z-index: 1;
+            border: 1px solid rgba(255, 0, 85, 0.2);
+        }
+
+        h1 {
+            margin-bottom: 5px;
+            font-size: 25px;
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 2.5px;
+            text-shadow: 0 0 10px var(--neon-red), 0 0 20px var(--neon-red);
+        }
+
+        p.subtitle {
+            color: #a0a0b8;
+            font-size: 13px;
+            margin-bottom: 25px;
+            letter-spacing: 0.5px;
+        }
+
+        .input-group {
+            margin-bottom: 18px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: #ff77a9;
+            font-weight: 600;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            padding: 13px 15px;
+            border: 1px solid rgba(255, 0, 85, 0.3);
+            border-radius: 10px;
+            background: rgba(5, 5, 8, 0.85);
+            color: #fff;
+            font-size: 15px;
+            box-sizing: border-box;
+            outline: none;
+            transition: 0.3s;
+        }
+
+        input[type="text"]:focus, select:focus {
+            border-color: var(--neon-red);
+            box-shadow: 0 0 12px var(--neon-glow);
+        }
+
+        input::placeholder { color: #555568; }
+        select option { background: #0c0c12; color: #fff; }
+
+        .type-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .type-btn {
+            flex: 1;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 0, 85, 0.3);
+            border-radius: 10px;
+            color: #a0a0b8;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            letter-spacing: 0.5px;
+        }
+
+        .type-btn.active {
+            background: linear-gradient(135deg, #ff0055, #cc0044);
+            color: #fff;
+            border-color: var(--neon-red);
+            box-shadow: 0 0 12px var(--neon-glow);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #ccc;
+            cursor: pointer;
+            background: rgba(255, 0, 85, 0.03);
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px dashed rgba(255, 0, 85, 0.2);
+            text-align: left;
+        }
+
+        .checkbox-group input {
+            accent-color: var(--neon-red);
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        #downloadBtn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #ff0055, #cc0044);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 15px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            box-shadow: 0 0 15px var(--neon-glow);
+            transition: 0.3s;
+        }
+
+        #downloadBtn:hover {
+            background: linear-gradient(135deg, #ff1a66, #e6004c);
+            box-shadow: 0 0 25px var(--neon-red);
+            transform: translateY(-2px);
+        }
+
+        #downloadBtn:disabled {
+            background: #222;
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #progressContainer {
+            display: none;
+            margin-top: 25px;
+            text-align: left;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            height: 14px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 0, 85, 0.3);
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.8);
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #ff0055, #ff5588);
+            box-shadow: 0 0 10px var(--neon-red);
+            transition: width 0.3s ease;
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #a0a0b8;
+            margin-top: 8px;
+        }
+
+        #status {
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        .download-btn {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 12px 25px;
+            background: #00ff88;
+            color: #050508;
+            text-decoration: none;
+            font-weight: bold;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.4);
+            transition: 0.3s;
+        }
+
+        .download-btn:hover {
+            background: #1aff99;
+            box-shadow: 0 0 25px rgba(0, 255, 136, 0.7);
+        }
+    </style>
+</head>
+<body>
+
+<div class="glow-wrap">
+    <div class="container">
+        <h1>CYBER X Downloader</h1>
+        <p class="subtitle">Advanced Social Media & Playlist Downloader</p>
+
+        <div class="input-group">
+            <label>Media / Playlist URL</label>
+            <input type="text" id="urlInput" placeholder="https://www.youtube.com/watch?v=..." required>
+        </div>
+
+        <div class="input-group">
+            <label>Select Media Type</label>
+            <div class="type-selector">
+                <button type="button" class="type-btn active" id="videoBtn" onclick="setMediaType('video')">📹 Video</button>
+                <button type="button" class="type-btn" id="audioBtn" onclick="setMediaType('audio')">🎵 Audio Only</button>
+            </div>
+        </div>
+
+        <div class="input-group" id="videoFormatGroup">
+            <label>Video Quality / Format</label>
+            <select id="videoFormatSelect">
+                <option value="best">Best Quality (Auto)</option>
+                <option value="2160">4K Ultra HD (2160p)</option>
+                <option value="1440">2K Quad HD (1440p)</option>
+                <option value="1080">Full HD (1080p)</option>
+                <option value="720">HD (720p)</option>
+                <option value="480">SD (480p)</option>
+            </select>
+        </div>
+
+        <div class="input-group" id="audioFormatGroup" style="display: none;">
+            <label>Audio Format / Quality</label>
+            <select id="audioFormatSelect">
+                <option value="mp3">MP3 (High Quality - 320kbps)</option>
+                <option value="m4a">M4A (Apple Compatible)</option>
+                <option value="wav">WAV (Lossless / Uncompressed)</option>
+                <option value="flac">FLAC (Studio Quality Lossless)</option>
+            </select>
+        </div>
+
+        <div class="checkbox-group" onclick="document.getElementById('playlistCheck').click()">
+            <input type="checkbox" id="playlistCheck" onclick="event.stopPropagation()">
+            <label for="playlistCheck" style="margin-bottom:0; cursor:pointer;">Download as full Playlist (Get ZIP archive)</label>
+        </div>
+
+        <button id="downloadBtn" onclick="startDownload()">Download Now</button>
+
+        <div id="progressContainer">
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progressBarFill"></div>
+            </div>
+            <div class="progress-info">
+                <span id="progressText">Downloading: 0%</span>
+                <span id="speedEtaText">Speed: 0 KB/s</span>
+            </div>
+        </div>
+
+        <div id="status"></div>
+    </div>
+</div>
+
+<script>
+    let currentMediaType = 'video';
+
+    function setMediaType(type) {
+        currentMediaType = type;
+        const videoBtn = document.getElementById('videoBtn');
+        const audioBtn = document.getElementById('audioBtn');
+        const videoGroup = document.getElementById('videoFormatGroup');
+        const audioGroup = document.getElementById('audioFormatGroup');
+
+        if (type === 'video') {
+            videoBtn.classList.add('active');
+            audioBtn.classList.remove('active');
+            videoGroup.style.display = 'block';
+            audioGroup.style.display = 'none';
+        } else {
+            audioBtn.classList.add('active');
+            videoBtn.classList.remove('active');
+            videoGroup.style.display = 'none';
+            audioGroup.style.display = 'block';
+        }
+    }
+
+    async function startDownload() {
+        const url = document.getElementById('urlInput').value.trim();
+        const format = currentMediaType === 'audio' 
+            ? document.getElementById('audioFormatSelect').value 
+            : document.getElementById('videoFormatSelect').value;
+        const isPlaylist = document.getElementById('playlistCheck').checked;
+        
+        const statusDiv = document.getElementById('status');
+        const btn = document.getElementById('downloadBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBarFill = document.getElementById('progressBarFill');
+        const progressText = document.getElementById('progressText');
+        const speedEtaText = document.getElementById('speedEtaText');
+
+        if (!url) {
+            statusDiv.innerHTML = '<span style="color:#ff4757;">Please enter a valid URL!</span>';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = 'PROCESSING...';
+        statusDiv.innerHTML = '';
+        progressContainer.style.display = 'block';
+        progressBarFill.style.width = '0%';
+        progressText.innerText = 'Connecting... 0%';
+
+        try {
+            const response = await fetch('/api/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url, media_type: currentMediaType, format: format, is_playlist: isPlaylist })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                statusDiv.innerHTML = `<span style="color:#ff4757;">${data.error || 'An error occurred.'}</span>`;
+                btn.disabled = false;
+                btn.innerText = 'Download Now';
+                progressContainer.style.display = 'none';
+                return;
+            }
+
+            const jobId = data.job_id;
+            const eventSource = new EventSource(`/api/progress/${jobId}`);
+
+            eventSource.onmessage = function(event) {
+                const res = JSON.parse(event.data);
+
+                if (res.status === 'downloading') {
+                    const percent = res.progress || 0;
+                    progressBarFill.style.width = percent + '%';
+                    progressText.innerText = `Downloading: ${percent.toFixed(1)}%`;
+                    speedEtaText.innerText = `Speed: ${res.speed || 'N/A'} | ETA: ${res.eta || 'N/A'}`;
+                } else if (res.status === 'processing') {
+                    progressBarFill.style.width = '100%';
+                    progressText.innerText = 'Processing & Merging Files...';
+                    speedEtaText.innerText = 'Almost done!';
+                } else if (res.status === 'completed') {
+                    eventSource.close();
+                    progressContainer.style.display = 'none';
+                    btn.disabled = false;
+                    btn.innerText = 'Download Now';
+                    statusDiv.innerHTML = `
+                        <div style="color:#00ff88; font-weight:bold; text-shadow: 0 0 8px rgba(0,255,136,0.5);">Download Ready!</div>
+                        <a href="${res.download_url}" class="download-btn" download>💾 Save File (${res.filename})</a>
+                    `;
+                } else if (res.status === 'error') {
+                    eventSource.close();
+                    progressContainer.style.display = 'none';
+                    btn.disabled = false;
+                    btn.innerText = 'Download Now';
+                    statusDiv.innerHTML = `<span style="color:#ff4757;">Error: ${res.error}</span>`;
+                }
+            };
+
+            eventSource.onerror = function() {
+                eventSource.close();
+                btn.disabled = false;
+                btn.innerText = 'Download Now';
+                progressContainer.style.display = 'none';
+                statusDiv.innerHTML = '<span style="color:#ff4757;">Connection lost.</span>';
+            };
+
+        } catch (err) {
+            btn.disabled = false;
+            btn.innerText = 'Download Now';
+            progressContainer.style.display = 'none';
+            statusDiv.innerHTML = `<span style="color:#ff4757;">Server connection error.</span>`;
+        }
+    }
+</script>
+
+<script>
+document.addEventListener('copy', e => { e.preventDefault(); alert('This Source Code cannot be copied ⚠️'); });
+document.addEventListener('selectstart', e => e.preventDefault());
+
+document.onkeydown = function(e){
+  if(
+    e.keyCode == 123 || 
+    (e.ctrlKey && e.keyCode == 85) || 
+    (e.ctrlKey && e.keyCode == 83) || 
+    (e.ctrlKey && e.keyCode == 67) || 
+    (e.ctrlKey && e.shiftKey && e.keyCode == 73) || 
+    (e.ctrlKey && e.keyCode == 73) 
+  ){
+    alert('This Source Code cannot be copied ⚠️');
+    return false;
+  }
+}
+
+setInterval(function(){
+    if(window.outerWidth - window.innerWidth > 160 || window.outerHeight - window.innerHeight > 160){
+        document.body.innerHTML = "<h1 style='color:red;text-align:center;margin-top:20%;font-family:Arial'>⚠️ This Source Code cannot be copied ⚠️</h1>";
+    }
+}, 1000);
+</script>
+
+
+</body>
+</html>

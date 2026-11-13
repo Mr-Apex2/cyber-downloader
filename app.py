@@ -67,9 +67,11 @@ def run_download_job(job_id, url, media_type, fmt, is_playlist):
         ydl_opts = {
             'progress_hooks': [progress_hook],
             'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
-            # Bot check එක මඟහරවා ගැනීමට Android සහ Web client භාවිතා කරයි
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+            'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
         }
+
+        # ඔබ cookies.txt ගොනුව GitHub වෙත දමා ඇත්නම් පහත රේඛාවේ ඇති # ලකුණ ඉවත් කරන්න:
+        # ydl_opts['cookiefile'] = 'cookies.txt'
 
         if not is_playlist:
             ydl_opts['noplaylist'] = True

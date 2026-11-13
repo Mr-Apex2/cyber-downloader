@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, send_file, redirect, url_for
+from flask import Flask, render_template, request, send_file
 import yt_dlp
 
 app = Flask(__name__)
@@ -11,7 +11,8 @@ if not os.path.exists(DOWNLOAD_FOLDER):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # templates ෆෝල්ඩරයේ ඇති cyber_portal.html ගොනුව ලෝඩ් කරයි
+    return render_template('cyber_portal.html')
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -22,7 +23,7 @@ def download():
         return "URL එකක් ලබා දෙන්න!", 400
 
     try:
-        # yt-dlp options (Requested format දෝෂය මඟහරවා ගැනීමට 'best' හෝ 'bestvideo+bestaudio/best' භාවිතා කරයි)
+        # yt-dlp options (FFmpeg හරහා වීඩියෝ සහ ඕඩියෝ මර්ජ් කිරීමට)
         if media_type == 'audio':
             ydl_opts = {
                 'format': 'bestaudio/best',
@@ -44,7 +45,7 @@ def download():
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # ඔඩියෝ ලෙස ඩවුන්ලෝඩ් වන්නේ නම් එක්ස්ටෙන්ෂන් එක mp3 ලෙස වෙනස් වේ
+            # ඕඩියෝ ලෙස ඩවුන්ලෝඩ් වන්නේ නම් එක්ස්ටෙන්ෂන් එක mp3 ලෙස වෙනස් වේ
             if media_type == 'audio':
                 filename = os.path.splitext(filename)[0] + '.mp3'
 

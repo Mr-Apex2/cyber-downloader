@@ -67,6 +67,8 @@ def run_download_job(job_id, url, media_type, fmt, is_playlist):
         ydl_opts = {
             'progress_hooks': [progress_hook],
             'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
+            # Bot check එක මඟහරවා ගැනීමට Android සහ Web client භාවිතා කරයි
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
         }
 
         if not is_playlist:
@@ -81,7 +83,6 @@ def run_download_job(job_id, url, media_type, fmt, is_playlist):
                 'preferredquality': '192',
             }]
         else:
-            # කිසිදු දෝෂයක් නොපෙන්වා වැඩ කරන ඉතාම ආරක්‍ෂිත format සෙටින්ග් එක
             if fmt == 'best':
                 ydl_opts['format'] = 'best/bestvideo+bestaudio'
             else:

@@ -1,137 +1,288 @@
 import os
 import uuid
-import threading
-import time
 import json
-from flask import Flask, render_template, request, jsonify, send_file, Response
+import time
+import shutil
+import threading
+import zipfile
+from pathlib import Path
+
 import yt_dlp
+from flask import Flask, Response, jsonify, render_template, request, send_file
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# ඩවුන්ලෝඩ් වන ගොනු තාවකාලිකව රඳවා ගැනීමට ෆෝල්ඩරයක් සකස් කිරීම
-DOWNLOAD_FOLDER = 'downloads'
-if not os.path.exists(DOWNLOAD_FOLDER):
-    os.makedirs(DOWNLOAD_FOLDER)
+# Railway Volume එකක් සම්බන්ධ කළහොත් DOWNLOAD_DIR=/data/downloads ලෙස Variable එකක් දමන්න.
+DOWNLOAD_ROOT = Path(os.environ.get("DOWNLOAD_DIR", "downloads")).resolve()
+DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
-# ඩවුන්ලෝඩ් වන ජොබ්ස් වල තත්ත්වය (Progress) තාවකාලිකව ගබඩා කිරීමට
+# Single Gunicorn worker එකක් භාවිත කරන්න. Job තොරතුරු memory තුළ තබා ඇත.
 jobs = {}
+jobs_lock = threading.Lock()
 
-@app.route('/')
-def index():
-    return render_template('cyber_portal.html')
 
-@app.route('/api/download', methods=['POST'])
-def api_download():
-    data = request.get_json() or {}
-    url = data.get('url')
-    media_type = data.get('media_type', 'video')
-    fmt = data.get('format', 'best')
-    is_playlist = data.get('is_playlist', False)
+def update_job(job_id, **values):
+    with jobs_lock:
+        if job_id in jobs:
+            jobs[job_id].update(values)
 
-    if not url:
-        return jsonify({'error': 'Please enter a valid URL!'}), 400
 
-    job_id = str(uuid.uuid4())
-    jobs[job_id] = {
-        'status': 'downloading',
-        'progress': 0,
-        'speed': '0 KB/s',
-        'eta': 'N/A',
-        'error': None,
-        'filename': None,
-        'filepath': None
+def audio_codec(value):
+    value = str(value or "mp3").strip().lower()
+    for codec in ("mp3", "m4a", "wav", "flac", "opus"):
+        if value == codec or value.startswith(codec):
+            return codec
+    return "mp3"
+
+
+def video_format(value):
+    value = str(value or "best").strip().lower()
+    if value == "best":
+        return "bv*+ba/b"
+    if value.isdigit() and value in {"480", "720", "1080", "1440", "2160"}:
+        height = int(value)
+        return f"bv*[height<={height}]+ba/b[height<={height}]/b"
+    return "bv*+ba/b"
+
+
+def safe_error_message(exc):
+    message = str(exc)
+    lower = message.lower()
+
+    if any(term in lower for term in (
+        "sign in to confirm", "not a bot", "login_required",
+        "confirm you're not a bot"
+    )):
+        return (
+            "YouTube විසින් Railway server ඉල්ලීම සීමා කර ඇත: "
+            "Sign in to confirm you're not a bot. මෙය GitHub code හෝ "
+            "frontend දෝෂයක් නොවේ. මෙම යෙදුමෙන් YouTube ආරක්ෂක/අනන්‍යතා "
+            "පරීක්ෂණ මඟහැරිය නොහැක. ඔබට අයිතිය ඇති මාධ්‍ය සඳහා නිල "
+            "download/export ක්‍රමයක් හෝ අයිතිකරු ලබාදුන් සෘජු download link "
+            "භාවිත කරන්න."
+        )
+
+    if "ffmpeg" in lower or "ffprobe" in lower:
+        return (
+            "FFmpeg හමු නොවීය. Railway build එකේ Aptfile තුළ ffmpeg "
+            "තිබෙන බවත් build එක නැවත සිදු කළ බවත් පරීක්ෂා කරන්න."
+        )
+
+    return message[:1200] or "Download එක අසාර්ථක විය."
+
+
+def create_ydl_options(job_dir, media_type, fmt, playlist, job_id):
+    def progress_hook(data):
+        status = data.get("status")
+
+        if status == "downloading":
+            total = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
+            downloaded = data.get("downloaded_bytes") or 0
+            percent = round(downloaded * 100 / total, 1) if total else 0
+
+            update_job(
+                job_id,
+                status="downloading",
+                progress=percent,
+                speed=data.get("_speed_str") or "N/A",
+                eta=data.get("_eta_str") or "N/A"
+            )
+
+        elif status == "finished":
+            update_job(
+                job_id,
+                status="processing",
+                progress=100,
+                speed="N/A",
+                eta="Processing"
+            )
+
+    options = {
+        "outtmpl": str(job_dir / "%(title).150B-%(id)s.%(ext)s"),
+        "noplaylist": not playlist,
+        "ignoreerrors": False,
+        "continuedl": True,
+        "overwrites": False,
+        "quiet": True,
+        "no_warnings": True,
+        "progress_hooks": [progress_hook],
+        "retries": 3,
+        "fragment_retries": 3,
     }
 
-    # පසුබිමේ (Background thread) ඩවුන්ලෝඩ් ක්‍රියාවලිය ආරම්භ කිරීම
-    threading.Thread(target=run_download_job, args=(job_id, url, media_type, fmt, is_playlist)).start()
+    if media_type == "audio":
+        codec = audio_codec(fmt)
+        options["format"] = "bestaudio/best"
+        options["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": codec,
+            "preferredquality": "320" if codec == "mp3" else "0",
+        }]
+    else:
+        options["format"] = video_format(fmt)
+        options["merge_output_format"] = "mp4"
 
-    return jsonify({'job_id': job_id})
+    return options
 
-def run_download_job(job_id, url, media_type, fmt, is_playlist):
-    def progress_hook(d):
-        if d['status'] == 'downloading':
-            total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
-            downloaded = d.get('downloaded_bytes', 0)
-            percent = (downloaded / total * 100) if total > 0 else 0
-            
-            speed = d.get('_speed_str', 'N/A')
-            eta = d.get('_eta_str', 'N/A')
 
-            jobs[job_id]['progress'] = percent
-            jobs[job_id]['speed'] = speed
-            jobs[job_id]['eta'] = eta
-        elif d['status'] == 'finished':
-            jobs[job_id]['status'] = 'processing'
+def run_download(job_id, url, media_type, fmt, playlist):
+    job_dir = DOWNLOAD_ROOT / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        ydl_opts = {
-            'progress_hooks': [progress_hook],
-            'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
-            'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
+        update_job(job_id, status="downloading", progress=0)
+
+        options = create_ydl_options(
+            job_dir, media_type, fmt, playlist, job_id
+        )
+
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=True)
+
+        if not info:
+            raise RuntimeError("මාධ්‍ය තොරතුරු ලබාගත නොහැකි විය.")
+
+        # Playlist එකක් නම් එහි සියලුම files ZIP එකකට එකතු කරයි.
+        downloaded_files = [
+            p for p in job_dir.rglob("*")
+            if p.is_file() and p.suffix.lower() not in {".part", ".ytdl"}
+        ]
+
+        if not downloaded_files:
+            raise FileNotFoundError("Download කළ ගොනුවක් සොයාගත නොහැක.")
+
+        if playlist:
+            zip_path = DOWNLOAD_ROOT / f"{job_id}.zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for file_path in downloaded_files:
+                    archive.write(file_path, arcname=file_path.name)
+            final_path = zip_path
+        else:
+            # Single item: අවසානයේ වෙනස් කළ දිනය අනුව අලුත්ම media file එක ගනී.
+            final_path = max(downloaded_files, key=lambda p: p.stat().st_mtime)
+
+        update_job(
+            job_id,
+            status="completed",
+            progress=100,
+            filename=final_path.name,
+            filepath=str(final_path),
+            download_url=f"/download_file/{job_id}",
+            speed="Done",
+            eta="0"
+        )
+
+    except Exception as exc:
+        update_job(
+            job_id,
+            status="error",
+            error=safe_error_message(exc)
+        )
+
+
+@app.route("/")
+def index():
+    # Upload කළ frontend filename එක cyber_portal.html ලෙස තිබිය යුතුය.
+    return render_template("cyber_portal.html")
+
+
+@app.route("/api/download", methods=["POST"])
+def api_download():
+    data = request.get_json(silent=True) or {}
+
+    url = str(data.get("url") or "").strip()
+    media_type = str(data.get("media_type") or "video").lower()
+    fmt = str(data.get("format") or "best").strip()
+    playlist = bool(data.get("is_playlist", False))
+
+    if not url.startswith(("https://", "http://")):
+        return jsonify({"error": "Please enter a valid http/https URL."}), 400
+
+    if media_type not in {"video", "audio"}:
+        return jsonify({"error": "Invalid media type."}), 400
+
+    job_id = str(uuid.uuid4())
+
+    with jobs_lock:
+        jobs[job_id] = {
+            "status": "queued",
+            "progress": 0,
+            "speed": "N/A",
+            "eta": "N/A",
+            "error": None,
+            "filename": None,
+            "filepath": None,
         }
 
-        # ඔබ cookies.txt ගොනුව GitHub වෙත දමා ඇත්නම් පහත රේඛාවේ ඇති # ලකුණ ඉවත් කරන්න:
-        # ydl_opts['cookiefile'] = 'cookies.txt'
+    thread = threading.Thread(
+        target=run_download,
+        args=(job_id, url, media_type, fmt, playlist),
+        daemon=True
+    )
+    thread.start()
 
-        if not is_playlist:
-            ydl_opts['noplaylist'] = True
+    return jsonify({"job_id": job_id}), 202
 
-        if media_type == 'audio':
-            ydl_opts['format'] = 'bestaudio/best'
-            codec = fmt if fmt in ['mp3', 'm4a', 'wav', 'flac'] else 'mp3'
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': codec,
-                'preferredquality': '192',
-            }]
-        else:
-            if fmt == 'best':
-                ydl_opts['format'] = 'best/bestvideo+bestaudio'
-            else:
-                ydl_opts['format'] = f'best[height<={fmt}]/best/bv*[height<={fmt}]+ba/b'
-            ydl_opts['merge_output_format'] = 'mp4'
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            if 'entries' in info:
-                filename = ydl.prepare_filename(info['entries'][0])
-            else:
-                filename = ydl.prepare_filename(info)
-
-            if media_type == 'audio':
-                codec = fmt if fmt in ['mp3', 'm4a', 'wav', 'flac'] else 'mp3'
-                filename = os.path.splitext(filename)[0] + f'.{codec}'
-            elif not filename.endswith('.mp4'):
-                filename = os.path.splitext(filename)[0] + '.mp4'
-
-            basename = os.path.basename(filename)
-            jobs[job_id]['status'] = 'completed'
-            jobs[job_id]['filename'] = basename
-            jobs[job_id]['filepath'] = filename
-            jobs[job_id]['download_url'] = f'/download_file/{job_id}'
-
-    except Exception as e:
-        jobs[job_id]['status'] = 'error'
-        jobs[job_id]['error'] = str(e)
-
-@app.route('/api/progress/<job_id>')
+@app.route("/api/progress/<job_id>")
 def api_progress(job_id):
-    def generate():
-        while job_id in jobs:
-            job = jobs[job_id]
-            yield f"data: {json.dumps(job)}\n\n"
-            if job['status'] in ['completed', 'error']:
+    def event_stream():
+        while True:
+            with jobs_lock:
+                current = jobs.get(job_id)
+                snapshot = dict(current) if current else None
+
+            if snapshot is None:
+                payload = {"status": "error", "error": "Job not found."}
+                yield f"data: {json.dumps(payload)}\\n\\n"
                 break
+
+            yield f"data: {json.dumps(snapshot)}\\n\\n"
+
+            if snapshot.get("status") in {"completed", "error"}:
+                break
+
             time.sleep(0.5)
-    return Response(generate(), mimetype='text/event-stream')
 
-@app.route('/download_file/<job_id>')
+    return Response(
+        event_stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        }
+    )
+
+
+@app.route("/download_file/<job_id>")
 def download_file(job_id):
-    job = jobs.get(job_id)
-    if job and job.get('filepath') and os.path.exists(job['filepath']):
-        return send_file(job['filepath'], as_attachment=True, download_name=job['filename'])
-    return "File not found or expired.", 404
+    with jobs_lock:
+        job = dict(jobs.get(job_id) or {})
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    filepath = job.get("filepath")
+    if not filepath:
+        return "File not found or download is not complete.", 404
+
+    path = Path(filepath).resolve()
+
+    # DOWNLOAD_ROOT එකෙන් පිටත file එකක් ලබාදීම වැළැක්වීම.
+    if DOWNLOAD_ROOT not in path.parents or not path.is_file():
+        return "File not found.", 404
+
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=secure_filename(job.get("filename") or path.name)
+    )
+
+
+@app.get("/health")
+def health():
+    return jsonify({"status": "ok"})
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, threaded=True)

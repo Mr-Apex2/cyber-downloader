@@ -81,11 +81,11 @@ def run_download_job(job_id, url, media_type, fmt, is_playlist):
                 'preferredquality': '192',
             }]
         else:
-            # දෝෂය සම්පූර්ණයෙන්ම මඟහරවා ගැනීමට ප්‍රබල Fallback එකක් සහිත format එක
+            # කිසිදු දෝෂයක් නොපෙන්වා වැඩ කරන ඉතාම ආරක්‍ෂිත format සෙටින්ග් එක
             if fmt == 'best':
-                ydl_opts['format'] = 'bestvideo+bestaudio/best'
+                ydl_opts['format'] = 'best/bestvideo+bestaudio'
             else:
-                ydl_opts['format'] = f'bestvideo[height<={fmt}]+bestaudio/best[height<={fmt}]/best/best'
+                ydl_opts['format'] = f'best[height<={fmt}]/best/bv*[height<={fmt}]+ba/b'
             ydl_opts['merge_output_format'] = 'mp4'
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

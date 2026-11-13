@@ -1,4 +1,5 @@
 """CYBER X backend (Flask + yt-dlp) for Railway.
+
 API used by templates/cyber_portal.html (frontend is unchanged):
   POST /api/download        {url, media_type, format, is_playlist} -> {job_id}
   GET  /api/progress/<id>   Server-Sent Events: downloading | processing | completed | error
@@ -169,7 +170,9 @@ def build_opts(job_id, job_dir, media_type, fmt, is_playlist):
             opts["format"] = "bv*+ba/b"
         else:
             h = int(fmt)
-            opts["format"] = f"bv*[height<={h}]+ba/b[height<={h}]"
+            # try the chosen quality first, then fall back to whatever the site offers
+            # (Facebook etc. often have no height info or a single combined file)
+            opts["format"] = f"bv*[height<={h}]+ba/b[height<={h}]/bv*+ba/b"
         opts["format_sort"] = ["res", "ext:mp4:m4a"]
         opts["merge_output_format"] = "mp4"
     return opts
